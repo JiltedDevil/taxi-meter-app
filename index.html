@@ -1,57 +1,787 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
-    <title>Taxi Meter Pro</title>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Taxi Meter Pro - 計程車跳表模擬器</title>
+    
+    <!-- Tailwind CSS (Via CDN) -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
     <style>
-      body {
-        font-family: 'Inter', sans-serif;
-        background-color: #F5F7FA;
-        color: #2D3748;
-        overscroll-behavior: none;
-      }
-      .font-digital {
-        font-family: 'Orbitron', monospace;
-      }
-      /* Custom scrollbar for webkit */
-      ::-webkit-scrollbar {
-        width: 6px;
-      }
-      ::-webkit-scrollbar-track {
-        background: #EDF2F7; 
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #CBD5E0; 
-        border-radius: 3px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #A0AEC0; 
-      }
-      /* Leaflet map z-index fix */
-      .leaflet-container {
-        z-index: 0;
-        background: #F5F7FA;
-      }
+        /* 全域設定 */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F5F7FA;
+            color: #2D3748;
+            overflow: hidden; /* 防止整個頁面捲動 */
+            overscroll-behavior: none;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* 數位字體 */
+        .font-digital {
+            font-family: 'Orbitron', monospace;
+        }
+
+        /* 自訂捲軸 */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #EDF2F7;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #CBD5E0;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #A0AEC0;
+        }
+
+        /* Leaflet 層級修正 */
+        .leaflet-container {
+            z-index: 0;
+            background: #F5F7FA;
+        }
+
+        /* iOS Safe Area */
+        .pb-safe {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        /* 工具類：隱藏元素 */
+        .hidden-el {
+            display: none !important;
+        }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0",
-    "react/": "https://aistudiocdn.com/react@^19.2.1/",
-    "react": "https://aistudiocdn.com/react@^19.2.1"
-  }
-}
-</script>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<link rel="stylesheet" href="/index.css">
 </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
-  </body>
+<body class="h-screen flex flex-col">
+
+    <!-- 1. 頂部導航列 -->
+    <header class="shrink-0 relative z-20 px-4 py-3 border-b border-gray-200 bg-white/90 backdrop-blur-md flex justify-between items-center gap-2 shadow-sm">
+        <div class="flex items-center gap-3 min-w-0">
+            <div class="bg-yellow-400 text-gray-900 font-bold px-2 py-1 rounded text-xs font-digital tracking-widest shadow-sm hidden sm:block border border-yellow-500/20">
+                TAXI
+            </div>
+            <h1 class="font-bold tracking-tight text-lg sm:text-xl whitespace-nowrap text-gray-800">
+                跳表<span class="text-blue-600">模擬器</span>
+            </h1>
+            
+            <!-- 模式標籤 (JS控制顯示) -->
+            <span id="badge-sim" class="hidden-el text-[10px] bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full border border-purple-200 flex items-center gap-1 whitespace-nowrap font-medium">
+                模擬模式
+            </span>
+            <span id="badge-gps" class="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full border border-blue-200 flex items-center gap-1 whitespace-nowrap font-medium">
+                GPS 模式
+            </span>
+        </div>
+
+        <div class="flex gap-2 items-center">
+            <!-- 縣市選擇 -->
+            <select id="select-city" class="bg-white border border-gray-300 text-gray-700 text-xs sm:text-sm rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none max-w-[120px] shadow-sm transition-all hover:border-gray-400">
+                <option value="NORTH_CENTRAL">北北基 / 台中</option>
+                <option value="TAOYUAN">桃園</option>
+                <option value="HSINCHU_MIAOLI">新竹 / 苗栗</option>
+                <option value="CHIAYI">嘉義</option>
+                <option value="SOUTH">台南 / 高雄</option>
+            </select>
+
+            <!-- 夜間加成按鈕 -->
+            <button id="btn-night" class="h-[32px] px-3 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 flex items-center gap-1.5 transition-all shadow-sm font-medium text-xs">
+                <span>🌙</span>
+                <span class="hidden xs:inline">夜間</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- 2. 主內容區 (左右分割) -->
+    <div class="flex-1 relative flex flex-col lg:flex-row overflow-hidden">
+        
+        <!-- 左側/上方：地圖 -->
+        <div class="basis-[45%] lg:basis-[55%] relative border-b lg:border-b-0 lg:border-r border-gray-200 bg-gray-100">
+            <div id="map" class="w-full h-full"></div>
+            <!-- 錯誤訊息提示 -->
+            <div id="error-msg" class="hidden-el absolute top-4 left-4 right-4 bg-red-50 text-red-700 px-3 py-2 rounded-lg border border-red-200 shadow-lg text-sm flex items-center gap-2 z-[1000]">
+                ⚠️ <span id="error-text">GPS Error</span>
+            </div>
+        </div>
+
+        <!-- 右側/下方：儀表板 -->
+        <div class="basis-[55%] lg:basis-[45%] flex flex-col bg-[#F5F7FA] relative overflow-y-auto pb-safe">
+            
+            <!-- 數據顯示區 -->
+            <div class="flex-1 p-5 flex flex-col gap-5 pb-28">
+                
+                <!-- 總車資卡片 -->
+                <div class="flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-orange-100 shadow-lg ring-1 ring-orange-50 transition-all">
+                    <span class="text-gray-500 text-xs md:text-sm uppercase tracking-wider font-semibold mb-1">
+                        目前車資 (NTD)
+                    </span>
+                    <div class="flex items-baseline gap-2">
+                        <span id="val-fare" class="font-digital font-bold tabular-nums tracking-wide text-6xl md:text-7xl text-orange-600">
+                            85
+                        </span>
+                    </div>
+                </div>
+
+                <!-- 次要數據網格 -->
+                <div class="grid grid-cols-2 gap-4">
+                    <!-- 距離 -->
+                    <div class="flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-gray-200 shadow-sm">
+                        <span class="text-gray-500 text-xs uppercase font-semibold mb-1">行駛距離</span>
+                        <div class="flex items-baseline gap-1">
+                            <span id="val-dist" class="font-digital font-bold text-2xl md:text-3xl text-blue-700">0.00</span>
+                            <span class="text-gray-400 text-sm">km</span>
+                        </div>
+                    </div>
+                    <!-- 速度 -->
+                    <div class="flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-gray-200 shadow-sm">
+                        <span class="text-gray-500 text-xs uppercase font-semibold mb-1">移動速度</span>
+                        <div class="flex items-baseline gap-1">
+                            <span id="val-speed" class="font-digital font-bold text-2xl md:text-3xl text-emerald-700">0.0</span>
+                            <span class="text-gray-400 text-sm">km/h</span>
+                        </div>
+                    </div>
+                    <!-- 延滯時間 -->
+                    <div class="flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-gray-200 shadow-sm">
+                        <span class="text-gray-500 text-xs uppercase font-semibold mb-1">停等時間 (延滯)</span>
+                        <span id="val-idle" class="font-digital font-bold text-xl md:text-2xl text-gray-700">00:00</span>
+                    </div>
+                    <!-- 總時間 -->
+                    <div class="flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-gray-200 shadow-sm">
+                        <span class="text-gray-500 text-xs uppercase font-semibold mb-1">行駛時間</span>
+                        <span id="val-time" class="font-digital font-bold text-xl md:text-2xl text-blue-700">00:00</span>
+                    </div>
+                </div>
+
+                <!-- 費率資訊 -->
+                <div class="mt-auto p-4 rounded-xl border border-gray-200 bg-white text-xs text-gray-600 shadow-sm space-y-2">
+                    <div class="flex items-center gap-2 mb-1 text-gray-800 font-bold border-b border-gray-100 pb-2 text-sm">
+                        <div class="bg-blue-100 p-1 rounded-md text-blue-600">ℹ️</div>
+                        <span id="info-city-name">北北基 / 台中 計費規則</span>
+                    </div>
+                    <div class="grid gap-1 pl-1">
+                        <p>• 起跳價: <span id="info-base" class="font-semibold text-gray-900">$85</span></p>
+                        <p>• 續程費: <span id="info-dist" class="font-semibold text-gray-900">$5</span> / <span id="info-dist-step">200</span>m</p>
+                        <p>• 延滯費: <span id="info-idle" class="font-semibold text-gray-900">$5</span> / <span id="info-idle-step">60</span>s (時速 &lt; 5km/h)</p>
+                        <p id="info-night-msg" class="hidden-el text-indigo-600 font-medium mt-1 bg-indigo-50 p-1.5 rounded-lg border border-indigo-100">
+                            🌙 夜間加成已啟用 (<span id="info-night-val">+$20</span>)
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 底部控制列 -->
+            <div class="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-gray-200 pb-safe z-50 lg:absolute">
+                <div class="max-w-3xl mx-auto flex gap-3 items-center justify-center">
+                    
+                    <!-- 模擬按鈕 -->
+                    <button id="btn-sim" class="flex flex-col items-center justify-center w-20 h-16 rounded-xl transition-all active:scale-95 shadow-sm border bg-white border-gray-200 text-gray-500 hover:bg-gray-50">
+                        <span class="text-xl mb-1">🚗</span>
+                        <span class="text-[11px] font-bold">模擬</span>
+                    </button>
+
+                    <!-- 開始/停止按鈕 -->
+                    <button id="btn-main" class="flex-1 h-16 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white rounded-xl font-bold text-xl tracking-wide flex items-center justify-center gap-2 shadow-lg shadow-emerald-200 transition-all active:scale-95">
+                        <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                        開始計費
+                    </button>
+
+                    <!-- 重置按鈕 -->
+                    <button id="btn-reset" class="w-20 h-16 rounded-xl flex flex-col items-center justify-center border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-all active:scale-95 shadow-sm">
+                        <span class="text-xl mb-1">↺</span>
+                        <span class="text-[11px] font-bold">重置</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 邏輯腳本 -->
+    <script>
+        // --- 1. 配置與常數 ---
+        const RATE_CONFIG = {
+            'NORTH_CENTRAL': {
+                name: '北北基 / 台中',
+                baseFare: 85,
+                baseDistance: 1250,
+                distStep: 200,
+                distPrice: 5,
+                idleSpeedThreshold: 5,
+                idleStep: 60,
+                idlePrice: 5,
+                nightSurchargeType: 'FLAT', // FLAT or PERCENTAGE
+                nightSurchargeValue: 20
+            },
+            'TAOYUAN': {
+                name: '桃園',
+                baseFare: 90,
+                baseDistance: 1250,
+                distStep: 200,
+                distPrice: 5,
+                idleSpeedThreshold: 5,
+                idleStep: 80,
+                idlePrice: 5,
+                nightSurchargeType: 'NONE',
+                nightSurchargeValue: 0
+            },
+            'HSINCHU_MIAOLI': {
+                name: '新竹 / 苗栗',
+                baseFare: 100,
+                baseDistance: 1250,
+                distStep: 200,
+                distPrice: 5,
+                idleSpeedThreshold: 5,
+                idleStep: 80,
+                idlePrice: 5,
+                nightSurchargeType: 'NONE',
+                nightSurchargeValue: 0
+            },
+            'CHIAYI': {
+                name: '嘉義',
+                baseFare: 100,
+                baseDistance: 1250,
+                distStep: 220,
+                distPrice: 5,
+                idleSpeedThreshold: 5,
+                idleStep: 100,
+                idlePrice: 5,
+                nightSurchargeType: 'FLAT',
+                nightSurchargeValue: 20
+            },
+            'SOUTH': {
+                name: '台南 / 高雄',
+                baseFare: 85,
+                baseDistance: 1250,
+                distStep: 200,
+                distPrice: 5,
+                idleSpeedThreshold: 5,
+                idleStep: 100,
+                idlePrice: 5,
+                nightSurchargeType: 'PERCENTAGE',
+                nightSurchargeValue: 0.2 // 20%
+            }
+        };
+
+        // --- 2. 狀態管理 (State) ---
+        const state = {
+            status: 'IDLE', // IDLE, RUNNING, FINISHED
+            cityId: 'NORTH_CENTRAL',
+            isNightMode: false,
+            isSimulating: false,
+            
+            // 計量
+            distanceMeters: 0,
+            elapsedSeconds: 0,
+            idleSeconds: 0,
+            currentSpeedKmh: 0,
+            currentFare: 85,
+            
+            // 地圖與定位
+            currentLocation: { lat: 25.0478, lng: 121.5170 }, // 台北車站預設
+            routePath: [], // [lat, lng] arrays
+            heading: Math.random() * 360 // 模擬用方向
+        };
+
+        // 系統變數
+        let timerInterval = null;
+        let watchId = null;
+        let lastCoords = null; // 紀錄上一次真實 GPS 座標與時間
+        let map = null;
+        let marker = null;
+        let polyline = null;
+
+        // --- 3. DOM 元素快取 ---
+        const dom = {
+            valFare: document.getElementById('val-fare'),
+            valDist: document.getElementById('val-dist'),
+            valSpeed: document.getElementById('val-speed'),
+            valIdle: document.getElementById('val-idle'),
+            valTime: document.getElementById('val-time'),
+            
+            btnMain: document.getElementById('btn-main'),
+            btnReset: document.getElementById('btn-reset'),
+            btnSim: document.getElementById('btn-sim'),
+            btnNight: document.getElementById('btn-night'),
+            selectCity: document.getElementById('select-city'),
+            
+            badgeSim: document.getElementById('badge-sim'),
+            badgeGps: document.getElementById('badge-gps'),
+            errorMsg: document.getElementById('error-msg'),
+            errorText: document.getElementById('error-text'),
+
+            infoCityName: document.getElementById('info-city-name'),
+            infoBase: document.getElementById('info-base'),
+            infoDist: document.getElementById('info-dist'),
+            infoDistStep: document.getElementById('info-dist-step'),
+            infoIdle: document.getElementById('info-idle'),
+            infoIdleStep: document.getElementById('info-idle-step'),
+            infoNightMsg: document.getElementById('info-night-msg'),
+            infoNightVal: document.getElementById('info-night-val'),
+        };
+
+        // --- 4. 核心邏輯函式 ---
+
+        // 計算車資
+        function calculateFare(distMeters, idleSecs, config, isNight) {
+            let fare = config.baseFare;
+
+            // 距離計費
+            if (distMeters > config.baseDistance) {
+                const chargableDist = distMeters - config.baseDistance;
+                const jumps = Math.ceil(chargableDist / config.distStep);
+                fare += jumps * config.distPrice;
+            }
+
+            // 延滯計費
+            const idleJumps = Math.floor(idleSecs / config.idleStep);
+            fare += idleJumps * config.idlePrice;
+
+            // 夜間加成
+            if (isNight) {
+                if (config.nightSurchargeType === 'FLAT') {
+                    fare += config.nightSurchargeValue;
+                } else if (config.nightSurchargeType === 'PERCENTAGE') {
+                    fare = fare * (1 + config.nightSurchargeValue);
+                }
+            }
+
+            return Math.round(fare);
+        }
+
+        // 計算兩點距離 (Haversine Formula)
+        function getDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; // meters
+            const phi1 = lat1 * Math.PI / 180;
+            const phi2 = lat2 * Math.PI / 180;
+            const deltaPhi = (lat2 - lat1) * Math.PI / 180;
+            const deltaLambda = (lon2 - lon1) * Math.PI / 180;
+
+            const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+                      Math.cos(phi1) * Math.cos(phi2) *
+                      Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        // 時間格式化 MM:SS
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            return `${h > 0 ? h.toString().padStart(2, '0') + ':' : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        // --- 5. 流程控制 ---
+
+        function init() {
+            initMap();
+            updateConfigUI();
+            updateDashboardUI();
+
+            // 嘗試獲取一次位置以定位地圖
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        updateLocation(pos.coords.latitude, pos.coords.longitude);
+                    },
+                    (err) => console.log("Init loc error", err),
+                    { enableHighAccuracy: true }
+                );
+            }
+        }
+
+        function startMeter() {
+            state.status = 'RUNNING';
+            state.routePath = []; // 清空路徑
+            if(state.currentLocation) {
+                state.routePath.push([state.currentLocation.lat, state.currentLocation.lng]);
+            }
+            
+            // 更新 UI 按鈕狀態
+            renderButtons();
+            hideError();
+
+            if (state.isSimulating) {
+                // 模擬模式：直接啟動計時器
+                startTimer();
+            } else {
+                // 真實 GPS 模式
+                if (!navigator.geolocation) {
+                    showError("此瀏覽器不支援 GPS");
+                    stopMeter();
+                    return;
+                }
+                watchId = navigator.geolocation.watchPosition(
+                    handleGeoSuccess,
+                    handleGeoError,
+                    { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+                );
+                startTimer(); // 計時器用於計算延滯時間與模擬迴圈
+            }
+        }
+
+        function stopMeter() {
+            state.status = 'FINISHED';
+            state.currentSpeedKmh = 0;
+            
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+            
+            renderButtons();
+            updateDashboardUI();
+        }
+
+        function resetMeter() {
+            stopMeter();
+            state.status = 'IDLE';
+            state.distanceMeters = 0;
+            state.elapsedSeconds = 0;
+            state.idleSeconds = 0;
+            state.currentSpeedKmh = 0;
+            state.routePath = [];
+            lastCoords = null;
+
+            // 重新計算起始價格
+            const config = RATE_CONFIG[state.cityId];
+            state.currentFare = calculateFare(0, 0, config, state.isNightMode);
+
+            // 清除地圖線條
+            if(polyline) polyline.setLatLngs([]);
+            
+            renderButtons();
+            updateDashboardUI();
+        }
+
+        function startTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                if (state.isSimulating) {
+                    runSimulationTick();
+                } else {
+                    runRealGPSTick(); // 僅處理時間與延滯，距離由 watchPosition 處理
+                }
+                updateDashboardUI();
+            }, 1000);
+        }
+
+        // --- 6. 模擬與 GPS 處理 ---
+
+        function runSimulationTick() {
+            const config = RATE_CONFIG[state.cityId];
+
+            // 1. 隨機變更速度
+            let delta = (Math.random() * 10) - 4; 
+            state.currentSpeedKmh += delta;
+            if (state.currentSpeedKmh < 0) state.currentSpeedKmh = 0;
+            if (state.currentSpeedKmh > 90) state.currentSpeedKmh = 90;
+            if (Math.random() < 0.05) state.currentSpeedKmh = 0; // 偶爾紅燈停車
+
+            // 2. 計算這一秒的移動距離 (m)
+            // 距離 = 速度(km/h) * 1000 / 3600
+            const distStep = (state.currentSpeedKmh * 1000) / 3600;
+
+            // 3. 計算新座標
+            if (distStep > 0) {
+                state.heading += (Math.random() * 20) - 10; // 稍微轉向
+                const rad = state.heading * (Math.PI / 180);
+                const lat = state.currentLocation.lat;
+                
+                // 簡易經緯度推算 (每度約 111km)
+                const dLat = (distStep * Math.cos(rad)) / 111000;
+                const dLng = (distStep * Math.sin(rad)) / (111000 * Math.cos(lat * (Math.PI / 180)));
+                
+                updateLocation(state.currentLocation.lat + dLat, state.currentLocation.lng + dLng);
+                state.distanceMeters += distStep;
+            }
+
+            // 4. 更新時間與延滯
+            state.elapsedSeconds++;
+            const isIdle = state.currentSpeedKmh < config.idleSpeedThreshold;
+            if (isIdle) state.idleSeconds++;
+
+            // 5. 計算車資
+            state.currentFare = calculateFare(state.distanceMeters, state.idleSeconds, config, state.isNightMode);
+        }
+
+        function handleGeoSuccess(position) {
+            const { latitude, longitude, speed, accuracy } = position.coords;
+            const now = Date.now();
+
+            if (accuracy > 100) return; // 忽略精準度太差的訊號
+
+            updateLocation(latitude, longitude);
+
+            // 如果不是執行中，只更新位置就好
+            if (state.status !== 'RUNNING') return;
+
+            let distDelta = 0;
+            let currentSpeed = speed ? speed * 3.6 : 0; // m/s to km/h
+
+            if (lastCoords) {
+                const calculatedDist = getDistance(
+                    lastCoords.latitude, lastCoords.longitude,
+                    latitude, longitude
+                );
+
+                // GPS 飄移過濾：只有移動超過 5 公尺才算
+                if (calculatedDist > 5) {
+                    distDelta = calculatedDist;
+                    state.distanceMeters += distDelta;
+                }
+
+                // 如果裝置沒給速度，自己算
+                if (speed === null && distDelta > 0) {
+                    const timeDelta = (now - lastCoords.timestamp) / 1000;
+                    if (timeDelta > 0) {
+                        currentSpeed = (distDelta / timeDelta) * 3.6;
+                    }
+                }
+            }
+
+            // 更新狀態
+            state.currentSpeedKmh = currentSpeed;
+            lastCoords = { latitude, longitude, timestamp: now };
+            
+            // 重新計算車資 (因為距離變了)
+            const config = RATE_CONFIG[state.cityId];
+            state.currentFare = calculateFare(state.distanceMeters, state.idleSeconds, config, state.isNightMode);
+            
+            updateDashboardUI();
+        }
+
+        function handleGeoError(err) {
+            showError(`GPS Error: ${err.message}`);
+        }
+
+        function runRealGPSTick() {
+            // 每秒執行一次，處理時間與延滯
+            // 注意：距離是在 handleGeoSuccess 更新
+            state.elapsedSeconds++;
+            
+            const config = RATE_CONFIG[state.cityId];
+            const isIdle = state.currentSpeedKmh < config.idleSpeedThreshold;
+            if (isIdle) state.idleSeconds++;
+
+            state.currentFare = calculateFare(state.distanceMeters, state.idleSeconds, config, state.isNightMode);
+        }
+
+
+        // --- 7. UI 更新與地圖 ---
+
+        function initMap() {
+            // 初始地圖：台北
+            map = L.map('map', {
+                zoomControl: false,
+                attributionControl: false
+            }).setView([25.0478, 121.5170], 16);
+
+            // 使用 CartoDB Positron 亮色底圖
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                maxZoom: 20,
+                subdomains: 'abcd'
+            }).addTo(map);
+
+            // 自訂計程車 Icon (Emoji)
+            const taxiIcon = L.divIcon({
+                className: 'custom-taxi-icon',
+                html: '<div style="font-size: 28px; line-height: 1; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));">🚖</div>',
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+            });
+
+            marker = L.marker([25.0478, 121.5170], { icon: taxiIcon }).addTo(map);
+
+            polyline = L.polyline([], {
+                color: '#3b82f6', // blue-500
+                weight: 5,
+                opacity: 0.8,
+                lineCap: 'round',
+                lineJoin: 'round'
+            }).addTo(map);
+            
+            // 加入版權資訊
+            L.control.attribution({ prefix: false }).addAttribution('© OSM, © CartoDB').addTo(map);
+        }
+
+        function updateLocation(lat, lng) {
+            state.currentLocation = { lat, lng };
+            if (marker) marker.setLatLng([lat, lng]);
+            if (map) map.panTo([lat, lng], { animate: true, duration: 1 });
+            
+            // 繪製軌跡
+            if (state.status === 'RUNNING' || state.status === 'FINISHED') {
+                if(state.routePath.length === 0 || 
+                   state.routePath[state.routePath.length-1][0] !== lat) {
+                    state.routePath.push([lat, lng]);
+                    if (polyline) polyline.setLatLngs(state.routePath);
+                }
+            }
+        }
+
+        function updateDashboardUI() {
+            // 數值顯示
+            dom.valFare.innerText = Math.round(state.currentFare);
+            dom.valDist.innerText = (state.distanceMeters / 1000).toFixed(2);
+            dom.valSpeed.innerText = state.currentSpeedKmh.toFixed(1);
+            dom.valIdle.innerText = formatTime(state.idleSeconds);
+            dom.valTime.innerText = formatTime(state.elapsedSeconds);
+
+            // 速度顏色警告
+            if (state.currentSpeedKmh > 80) {
+                dom.valSpeed.classList.remove('text-emerald-700');
+                dom.valSpeed.classList.add('text-red-600');
+            } else {
+                dom.valSpeed.classList.remove('text-red-600');
+                dom.valSpeed.classList.add('text-emerald-700');
+            }
+        }
+
+        function updateConfigUI() {
+            const config = RATE_CONFIG[state.cityId];
+            
+            dom.infoCityName.innerText = config.name + " 計費規則";
+            dom.infoBase.innerText = `$${config.baseFare}`;
+            dom.infoDist.innerText = `$${config.distPrice}`;
+            dom.infoDistStep.innerText = config.distStep;
+            dom.infoIdle.innerText = `$${config.idlePrice}`;
+            dom.infoIdleStep.innerText = config.idleStep;
+
+            if (state.isNightMode) {
+                dom.infoNightMsg.classList.remove('hidden-el');
+                const val = config.nightSurchargeType === 'PERCENTAGE' 
+                    ? `+${config.nightSurchargeValue * 100}%` 
+                    : `+$${config.nightSurchargeValue}`;
+                dom.infoNightVal.innerText = val;
+                
+                dom.btnNight.classList.add('bg-indigo-600', 'border-indigo-600', 'text-white');
+                dom.btnNight.classList.remove('bg-white', 'text-gray-600');
+            } else {
+                dom.infoNightMsg.classList.add('hidden-el');
+                
+                dom.btnNight.classList.remove('bg-indigo-600', 'border-indigo-600', 'text-white');
+                dom.btnNight.classList.add('bg-white', 'text-gray-600');
+            }
+        }
+
+        function renderButtons() {
+            const isIdle = state.status === 'IDLE';
+            const isRunning = state.status === 'RUNNING';
+            const isFinished = state.status === 'FINISHED';
+
+            // 模擬按鈕：只有 IDLE 狀態可以切換
+            if (isIdle) {
+                dom.btnSim.disabled = false;
+                dom.btnSim.classList.remove('opacity-50', 'cursor-not-allowed');
+                if (state.isSimulating) {
+                    dom.btnSim.classList.add('bg-purple-50', 'border-purple-200', 'text-purple-600');
+                    dom.btnSim.classList.remove('bg-white', 'text-gray-500');
+                    dom.badgeSim.classList.remove('hidden-el');
+                    dom.badgeGps.classList.add('hidden-el');
+                } else {
+                    dom.btnSim.classList.remove('bg-purple-50', 'border-purple-200', 'text-purple-600');
+                    dom.btnSim.classList.add('bg-white', 'text-gray-500');
+                    dom.badgeSim.classList.add('hidden-el');
+                    dom.badgeGps.classList.remove('hidden-el');
+                }
+            } else {
+                // 執行中不能切換模式
+                dom.btnSim.disabled = true;
+                dom.btnSim.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+
+            // 主按鈕 (開始/停止)
+            if (isRunning) {
+                dom.btnMain.innerHTML = '<svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"/></svg> 停止計費';
+                dom.btnMain.classList.remove('bg-emerald-500', 'hover:bg-emerald-600', 'shadow-emerald-200');
+                dom.btnMain.classList.add('bg-red-500', 'hover:bg-red-600', 'shadow-red-200');
+            } else {
+                dom.btnMain.innerHTML = '<svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> 開始計費';
+                dom.btnMain.classList.remove('bg-red-500', 'hover:bg-red-600', 'shadow-red-200');
+                dom.btnMain.classList.add('bg-emerald-500', 'hover:bg-emerald-600', 'shadow-emerald-200');
+            }
+
+            // 重置按鈕
+            if (isRunning) {
+                dom.btnReset.disabled = true;
+                dom.btnReset.classList.add('opacity-50', 'cursor-not-allowed', 'bg-gray-50');
+            } else {
+                dom.btnReset.disabled = false;
+                dom.btnReset.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-50');
+            }
+            
+            // 設定鎖定
+            dom.selectCity.disabled = isRunning;
+            dom.btnNight.disabled = isRunning;
+        }
+
+        function showError(msg) {
+            dom.errorText.innerText = msg;
+            dom.errorMsg.classList.remove('hidden-el');
+            setTimeout(() => {
+                hideError();
+            }, 5000);
+        }
+
+        function hideError() {
+            dom.errorMsg.classList.add('hidden-el');
+        }
+
+        // --- 8. 事件監聽 ---
+
+        dom.btnMain.addEventListener('click', () => {
+            if (state.status === 'RUNNING') {
+                stopMeter();
+            } else {
+                startMeter();
+            }
+        });
+
+        dom.btnReset.addEventListener('click', resetMeter);
+
+        dom.btnSim.addEventListener('click', () => {
+            if (state.status !== 'IDLE') return;
+            state.isSimulating = !state.isSimulating;
+            renderButtons();
+        });
+
+        dom.btnNight.addEventListener('click', () => {
+            if (state.status === 'RUNNING') return;
+            state.isNightMode = !state.isNightMode;
+            // 立即重新計算底價
+            const config = RATE_CONFIG[state.cityId];
+            state.currentFare = calculateFare(0, 0, config, state.isNightMode);
+            updateConfigUI();
+            updateDashboardUI();
+        });
+
+        dom.selectCity.addEventListener('change', (e) => {
+            if (state.status === 'RUNNING') return;
+            state.cityId = e.target.value;
+            // 重置價格
+            resetMeter(); 
+            updateConfigUI();
+        });
+
+        // 啟動應用
+        init();
+
+    </script>
+</body>
 </html>
